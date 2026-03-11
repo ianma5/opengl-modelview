@@ -3,6 +3,11 @@
 #define GLFW_INCLUDE_NONE
 #include <fstream>
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "importobj.h"
 #include <vector>
 #include <iostream>
@@ -19,6 +24,45 @@ std::string importShaders(const std::string& filename) {
     return buffer.str();
 
 }
+
+void normalizeVertices(std::vector<float>& vertices) {
+    float minX = vertices[0], maxX = vertices[0];
+    float minY = vertices[1], maxY = vertices[1];
+    float minZ = vertices[2], maxZ = vertices[2];
+
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        float x = vertices[i];
+        float y = vertices[i + 1];
+        float z = vertices[i + 2];
+
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+    }
+
+    float centerX = (minX + maxX) / 2.0f;
+    float centerY = (minY + maxY) / 2.0f;
+    float centerZ = (minZ + maxZ) / 2.0f;
+
+    float sizeX = maxX - minX;
+    float sizeY = maxY - minY;
+    float sizeZ = maxZ - minZ;
+
+    float maxSize = sizeX;
+    if (sizeY > maxSize) maxSize = sizeY;
+    if (sizeZ > maxSize) maxSize = sizeZ;
+
+    float scale = 1.8f / maxSize;
+
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        vertices[i]     = (vertices[i]     - centerX) * scale;
+        vertices[i + 1] = (vertices[i + 1] - centerY) * scale;
+        vertices[i + 2] = (vertices[i + 2] - centerZ) * scale;
+    }
+}
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
 
@@ -32,6 +76,13 @@ std::string fs = importShaders("../source.fs");
 
 const char* vertexShaderSource = vs.c_str();
 const char* fragmentShaderSource = fs.c_str();
+
+// part d
+float posx = 0.0f, posy = 0.0f, posz = 0.0f;
+float rotX = 0.0f, rotY = 0.0f, rotZ = 0.0f;
+float global_scale = 1.0f;
+
+
 
 int main()
 {
@@ -106,45 +157,12 @@ int main()
     // ------------------------------------------------------   ------------
     // add color attribute to each vertex
     std::vector<float> vertices;
+
     if (!loadFile("../f-16.obj", vertices)) {
         return -1;
     }
-    float minX = vertices[0], maxX = vertices[0];
-    float minY = vertices[1], maxY = vertices[1];
-    float minZ = vertices[2], maxZ = vertices[2];
+    normalizeVertices(vertices);
 
-    for (size_t i = 0; i < vertices.size(); i += 3) {
-        float x = vertices[i];
-        float y = vertices[i + 1];
-        float z = vertices[i + 2];
-
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        if (z < minZ) minZ = z;
-        if (z > maxZ) maxZ = z;
-    }
-
-    float centerX = (minX + maxX) / 2.0f;
-    float centerY = (minY + maxY) / 2.0f;
-    float centerZ = (minZ + maxZ) / 2.0f;
-
-    float sizeX = maxX - minX;
-    float sizeY = maxY - minY;
-    float sizeZ = maxZ - minZ;
-
-    float maxSize = sizeX;
-    if (sizeY > maxSize) maxSize = sizeY;
-    if (sizeZ > maxSize) maxSize = sizeZ;
-
-    float scale = 1.8f / maxSize;
-
-    for (size_t i = 0; i < vertices.size(); i += 3) {
-        vertices[i]     = (vertices[i]     - centerX) * scale;
-        vertices[i + 1] = (vertices[i + 1] - centerY) * scale;
-        vertices[i + 2] = (vertices[i + 2] - centerZ) * scale;
-    }
     unsigned int numVertices = vertices.size() / 3;
 
     unsigned int VBO, VAO;
@@ -154,8 +172,10 @@ int main()
     glBindVertexArray(VAO);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    // for gpu
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
+    // cpu
+    //glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0); // change to 6 to account for color
     glEnableVertexAttribArray(0);
 
@@ -174,6 +194,10 @@ int main()
     // uncomment this call to draw in wireframe polygons.
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
+    // get uniform location
+    int gpuMatrix = glGetUniformLocation(shaderProgram, "modelmatrix");
+
+    //std::vector<float> newVs; cpu
     // render loop
     // -----------
     while (!glfwWindowShouldClose(window))
@@ -182,6 +206,30 @@ int main()
         // -----
         processInput(window);
 
+        // model matrix
+        glm::mat4 modelView = glm::mat4(1.0f);
+
+        modelView = glm::translate(modelView, glm::vec3(posx, posy, posz));
+        modelView = glm::rotate(modelView, rotX, glm::vec3(1.0f, 0.0f, 0.0f));
+        modelView = glm::rotate(modelView, rotY, glm::vec3(0.0f, 1.0f, 0.0f));
+        modelView = glm::rotate(modelView, rotZ, glm::vec3(0.0f, 0.0f, 1.0f));
+        modelView = glm::scale(modelView, glm::vec3(global_scale, global_scale, global_scale));
+
+        // for CPU
+        // newVs.clear();
+        // newVs.reserve(vertices.size());
+        //
+        // for (size_t i = 0; i < vertices.size(); i += 3) {
+        //     glm::vec4 p(vertices[i], vertices[i + 1], vertices[i + 2], 1.0f);
+        //     glm::vec4 result = modelView * p;
+        //
+        //     newVs.push_back(result.x);
+        //     newVs.push_back(result.y);
+        //     newVs.push_back(result.z);
+        // }
+        // CPU
+        // glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        // glBufferData(GL_ARRAY_BUFFER, newVs.size() * sizeof(float), newVs.data(),GL_DYNAMIC_DRAW);
         // render
         // ------
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
@@ -190,6 +238,10 @@ int main()
         // draw our first triangle
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
+
+        // for GPU only, changes the variable in glsl
+        glUniformMatrix4fv(gpuMatrix, 1, GL_FALSE, glm::value_ptr(modelView));
+
         glDrawArrays(GL_TRIANGLES, 0, numVertices);
         // glBindVertexArray(0); // unbind our VA no need to unbind it every time 
  
@@ -217,6 +269,28 @@ void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    // translation with WASD
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) posx -= 0.01f;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) posx += 0.01f;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) posy += 0.01f;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) posy -= 0.01f;
+
+    // rotation with arrow keys
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotY += 0.02f;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotY -= 0.02f;
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX += 0.02f;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX -= 0.02f;
+
+    // z-axis rotation
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) rotZ += 0.02f;
+    if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) rotZ -= 0.02f;
+
+    // scaling
+    if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) global_scale -= 0.01f;
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) global_scale += 0.01f;
+
+    if (global_scale < 0.05f) global_scale = 0.05f;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
