@@ -63,6 +63,33 @@ void normalizeVertices(std::vector<float>& vertices) {
         vertices[i + 2] = (vertices[i + 2] - centerZ) * scale;
     }
 }
+
+struct Object {
+    std::vector<float> vertices;
+    unsigned int VBO = 0;
+    unsigned int VAO = 0;
+    unsigned int numVertices = 0;
+    glm::vec3 center = glm::vec3(0.0f);
+};
+
+void setObj(Object& obj) {
+    obj.numVertices = obj.vertices.size() / 3;
+
+    glGenVertexArrays(1, &obj.VAO);
+    glGenBuffers(1, &obj.VBO);
+
+    glBindVertexArray(obj.VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, obj.VBO);
+    glBufferData(GL_ARRAY_BUFFER, obj.vertices.size() * sizeof(float), obj.vertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
 
@@ -82,7 +109,10 @@ float posx = 0.0f, posy = 0.0f, posz = 0.0f;
 float rotX = 0.0f, rotY = 0.0f, rotZ = 0.0f;
 float global_scale = 1.0f;
 
-
+// animation variables
+bool isOrbiting = false;
+bool spacePressed = false;
+float orbitAngle = 0.0f;
 
 int main()
 {
@@ -111,7 +141,7 @@ int main()
 
     // // glew: load all OpenGL function pointers
     glewInit();
-
+    glEnable(GL_DEPTH_TEST);
 
     // build and compile our shader program
     // ------------------------------------
@@ -155,40 +185,51 @@ int main()
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------   ------------
-    // add color attribute to each vertex
-    std::vector<float> vertices;
+    Object obj1;
+    Object obj2;
 
-    if (!loadFile("../f-16.obj", vertices)) {
+    //std::vector<float> vertices;
+
+
+    if (!loadFile("../f-16.obj", obj1.vertices)) {
         return -1;
     }
-    normalizeVertices(vertices);
+    if (!loadFile("../pawn.obj", obj2.vertices)) {
+        return -1;
+    }
+    normalizeVertices(obj1.vertices);
+    normalizeVertices(obj2.vertices);
+    obj1.center = glm::vec3(-0.8f, 0.0f, 0.0f);
+    obj2.center = glm::vec3(0.8f,0.0f,0.0f);
 
-    unsigned int numVertices = vertices.size() / 3;
+    setObj(obj1);
+    setObj(obj2);
+    //unsigned int numVertices = vertices.size() / 3;
 
-    unsigned int VBO, VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    // for gpu
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    // cpu
-    //glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0); // change to 6 to account for color
-    glEnableVertexAttribArray(0);
-
-
-    // glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float))); // change to 6 to account for color
-    // glEnableVertexAttribArray(1);
-
-    // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    glBindBuffer(GL_ARRAY_BUFFER, 0); 
-
-    // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, but this rarely happens. Modifying other
-    // VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
-    glBindVertexArray(0); 
+    // unsigned int VBO, VAO;
+    // glGenVertexArrays(1, &VAO);
+    // glGenBuffers(1, &VBO);
+    // // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
+    // glBindVertexArray(VAO);
+    //
+    // glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    // // for gpu
+    // //glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    // // cpu
+    // //glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
+    // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0); // change to 6 to account for color
+    // glEnableVertexAttribArray(0);
+    //
+    //
+    // // glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float))); // change to 6 to account for color
+    // // glEnableVertexAttribArray(1);
+    //
+    // // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
+    // glBindBuffer(GL_ARRAY_BUFFER, 0);
+    //
+    // // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, but this rarely happens. Modifying other
+    // // VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
+    // glBindVertexArray(0);
 
 
     // uncomment this call to draw in wireframe polygons.
@@ -200,61 +241,67 @@ int main()
     //std::vector<float> newVs; cpu
     // render loop
     // -----------
+    // render loop
+    // -----------
     while (!glfwWindowShouldClose(window))
     {
-        // input
-        // -----
         processInput(window);
 
-        // model matrix
-        glm::mat4 modelView = glm::mat4(1.0f);
+        // animation
+        if (isOrbiting) {
+            orbitAngle += 0.01f;
+        }
 
+        // Calculate the model view
+        glm::mat4 modelView = glm::mat4(1.0f);
         modelView = glm::translate(modelView, glm::vec3(posx, posy, posz));
         modelView = glm::rotate(modelView, rotX, glm::vec3(1.0f, 0.0f, 0.0f));
         modelView = glm::rotate(modelView, rotY, glm::vec3(0.0f, 1.0f, 0.0f));
         modelView = glm::rotate(modelView, rotZ, glm::vec3(0.0f, 0.0f, 1.0f));
         modelView = glm::scale(modelView, glm::vec3(global_scale, global_scale, global_scale));
 
-        // for CPU
-        // newVs.clear();
-        // newVs.reserve(vertices.size());
-        //
-        // for (size_t i = 0; i < vertices.size(); i += 3) {
-        //     glm::vec4 p(vertices[i], vertices[i + 1], vertices[i + 2], 1.0f);
-        //     glm::vec4 result = modelView * p;
-        //
-        //     newVs.push_back(result.x);
-        //     newVs.push_back(result.y);
-        //     newVs.push_back(result.z);
-        // }
-        // CPU
-        // glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        // glBufferData(GL_ARRAY_BUFFER, newVs.size() * sizeof(float), newVs.data(),GL_DYNAMIC_DRAW);
-        // render
-        // ------
+        glm::vec3 midpoint = (obj1.center + obj2.center) * 0.5f;
+        glm::vec3 axis = glm::normalize(obj2.center - obj1.center);
+
+        glm::mat4 orbit = glm::mat4(1.0f);
+        orbit = glm::translate(orbit, midpoint);
+        orbit = glm::rotate(orbit, orbitAngle, axis);
+        orbit = glm::translate(orbit, -midpoint);
+
+        // apply orbit then user controls
+        glm::mat4 model1 = glm::mat4(1.0f);
+        model1 = glm::translate(model1, obj1.center);
+        model1 = orbit * model1;
+        model1 = modelView * model1;
+
+        glm::mat4 model2 = glm::mat4(1.0f);
+        model2 = glm::translate(model2, obj2.center);
+        model2 = orbit * model2;
+        model2 = modelView * model2;
+
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Make sure Depth Buffer is cleared too!
 
-        // draw our first triangle
         glUseProgram(shaderProgram);
-        glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
 
-        // for GPU only, changes the variable in glsl
-        glUniformMatrix4fv(gpuMatrix, 1, GL_FALSE, glm::value_ptr(modelView));
+        // Draw first obj
+        glBindVertexArray(obj1.VAO);
+        glUniformMatrix4fv(gpuMatrix, 1, GL_FALSE, glm::value_ptr(model1));
+        glDrawArrays(GL_TRIANGLES, 0, obj1.numVertices);
 
-        glDrawArrays(GL_TRIANGLES, 0, numVertices);
-        // glBindVertexArray(0); // unbind our VA no need to unbind it every time 
- 
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
+        // Draw second obj
+        glBindVertexArray(obj2.VAO);
+        glUniformMatrix4fv(gpuMatrix, 1, GL_FALSE, glm::value_ptr(model2));
+        glDrawArrays(GL_TRIANGLES, 0, obj2.numVertices);
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     // optional: de-allocate all resources once they've outlived their purpose:
     // ------------------------------------------------------------------------
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
+    // glDeleteVertexArrays(1, &VAO);
+    // glDeleteBuffers(1, &VBO);
     glDeleteProgram(shaderProgram);
 
     // glfw: terminate, clearing all previously allocated GLFW resources.
@@ -291,6 +338,13 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) global_scale += 0.01f;
 
     if (global_scale < 0.05f) global_scale = 0.05f;
+
+    // animation toggle
+    bool space = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+    if (spacePressed && !space) {
+        isOrbiting = !isOrbiting;
+    }
+    spacePressed = space;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
